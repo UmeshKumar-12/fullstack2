@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simple To‑Do List</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--muted:#94a3b8;--accent:#60a5fa;--success:#34d399}
+    *{box-sizing:border-box}
+    body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:linear-gradient(180deg,#071129 0%, #071827 100%); color:#e6eef8; min-height:100vh; margin:0; display:flex; align-items:center; justify-content:center; padding:32px}
+    .wrap{width:100%; max-width:760px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:12px; padding:20px; box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+    h1{margin:0 0 12px; font-size:24px}
+    .input-row{display:flex; gap:8px}
+    input.add{flex:1; padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); background:transparent; color:inherit}
+    button{background:var(--accent); color:#04202d; padding:10px 12px; border-radius:8px; border:none; font-weight:600; cursor:pointer}
+    .controls{display:flex; gap:8px; margin-top:12px; align-items:center; flex-wrap:wrap}
+    .filters button{background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.03); padding:6px 10px; border-radius:8px; cursor:pointer}
+    .filters button.active{color:var(--bg); background:var(--accent)}
+    ul.todos{list-style:none; padding:0; margin:18px 0 0; display:flex; flex-direction:column; gap:8px}
+    li.task{display:flex; gap:10px; align-items:center; padding:10px 12px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005)); border:1px solid rgba(255,255,255,0.02)}
+    li.task .text{flex:1}
+    li.task.completed .text{opacity:0.6; text-decoration:line-through}
+    .small{font-size:13px; color:var(--muted)}
+    .btn-ghost{background:transparent; border:none; color:var(--muted); cursor:pointer}
+    .empty{opacity:0.6; padding:18px; text-align:center}
+    @media (max-width:520px){h1{font-size:20px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>To‑Do List</h1>
+      <div class="input-row">
+        <input id="newTask" class="add" placeholder="Add a new task and press Enter or click Add" aria-label="New task">
+        <button id="addBtn">Add</button>
+      </div>
+
+      <div class="controls">
+        <div class="filters" role="tablist" aria-label="Filter tasks">
+          <button data-filter="all" class="active">All</button>
+          <button data-filter="active">Active</button>
+          <button data-filter="completed">Completed</button>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center">
+          <button id="clearCompleted" class="btn-ghost small">Clear completed</button>
+          <div class="small" id="counter">0 tasks</div>
+        </div>
+      </div>
+
+      <ul class="todos" id="todoList" aria-live="polite"></ul>
+      <div class="empty" id="empty" hidden>Nothing here. Add your first task 👍</div>
+
+    </div>
+  </div>
+
+  <script>
+    // Simple To-Do app with localStorage, add, toggle, edit (double-click), delete, filters
+    const STORAGE_KEY = 'todo_app_tasks_v1'
+    const newTaskInput = document.getElementById('newTask')
+    const addBtn = document.getElementById('addBtn')
+    const listEl = document.getElementById('todoList')
+    const counterEl = document.getElementById('counter')
+    const emptyEl = document.getElementById('empty')
+    const filters = document.querySelectorAll('.filters [data-filter]')
+    let tasks = []
+    let filter = 'all'
+
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)) }
+    function load(){ try{ tasks = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [] }catch(e){ tasks = [] } }
+
+    function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7) }
+
+    function render(){
+      listEl.innerHTML = ''
+      const visible = tasks.filter(t => filter === 'all' ? true : filter === 'active' ? !t.done : t.done)
+      if(visible.length === 0){ emptyEl.hidden = false } else { emptyEl.hidden = true }
+
+      visible.forEach(t => {
+        const li = document.createElement('li')
+        li.className = 'task' + (t.done ? ' completed' : '')
+        li.setAttribute('data-id', t.id)
+
+        const checkbox = document.createElement('input')
+        checkbox.type = 'checkbox'
+        checkbox.checked = !!t.done
+        checkbox.addEventListener('change', () => toggleDone(t.id))
+
+        const span = document.createElement('div')
+        span.className = 'text'
+        span.tabIndex = 0
+        span.textContent = t.text
+        span.title = 'Double-click to edit'
+        span.addEventListener('dblclick', () => editTask(t.id, span))
+        span.addEventListener('keydown', (e) => { if(e.key === 'Enter') editTask(t.id, span) })
+
+        const meta = document.createElement('div')
+        meta.className = 'small'
+        meta.textContent = t.created ? new Date(t.created).toLocaleString() : ''
+
+        const del = document.createElement('button')
+        del.className = 'btn-ghost'
+        del.title = 'Delete'
+        del.innerHTML = '🗑'
+        del.addEventListener('click', () => removeTask(t.id))
+
+        li.appendChild(checkbox)
+        li.appendChild(span)
+        li.appendChild(meta)
+        li.appendChild(del)
+        listEl.appendChild(li)
+      })
+
+      counterEl.textContent = tasks.filter(t => !t.done).length + ' active'
+      save()
+    }
+
+    function addTask(text){
+      const trimmed = text.trim()
+      if(!trimmed) return
+      tasks.unshift({ id: uid(), text: trimmed, done: false, created: Date.now() })
+      newTaskInput.value = ''
+      render()
+    }
+
+    function toggleDone(id){
+      const t = tasks.find(x => x.id === id)
+      if(!t) return
+      t.done = !t.done
+      render()
+    }
+
+    function removeTask(id){ tasks = tasks.filter(x => x.id !== id); render() }
+
+    function editTask(id, spanEl){
+      const t = tasks.find(x => x.id === id)
+      if(!t) return
+      const input = document.createElement('input')
+      input.value = t.text
+      input.style.width = '100%'
+      input.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter') { finishEdit() }
+        if(e.key === 'Escape') { cancelEdit() }
+      })
+      input.addEventListener('blur', finishEdit)
+
+      function finishEdit(){
+        const v = input.value.trim()
+        if(v) t.text = v
+        render()
+      }
+      function cancelEdit(){ render() }
+
+      spanEl.replaceWith(input)
+      input.focus()
+      input.select()
+    }
+
+    function setFilter(f){ filter = f; filters.forEach(b=>b.classList.toggle('active', b.dataset.filter===f)); render() }
+
+    addBtn.addEventListener('click', () => addTask(newTaskInput.value))
+
+    newTaskInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') addTask(newTaskInput.value) })
+
+    document.getElementById('clearCompleted').addEventListener('click', () => { tasks = tasks.filter(t => !t.done); render() })
+
+    filters.forEach(b => b.addEventListener('click', () => setFilter(b.dataset.filter)))
+
+    // Initialize
+    load()
+    render()
+
+    // Expose for debugging in console (optional)
+    window._todo = {get: ()=>tasks, add: addTask}
+  </script>
+</body>
+</html>
