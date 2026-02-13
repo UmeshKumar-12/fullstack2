@@ -29,3 +29,7 @@ fs.readFile("./a.txt","utf-8",(arr,result)=>{
     }
 })
 fs.appendFileSync("./a.txt","good")
+
+fs.cpSync("./a.txt","./b.txt");
+
+fs.unlinkSync("./a.txt");
